@@ -12,10 +12,6 @@
 
 Vizzy accepts natural-language user requests and routes them to specialist AI agents for text or image generation through an orchestrated backend workflow.
 
-## Live Demo
-
-[http://ec2-65-0-86-237.ap-south-1.compute.amazonaws.com/](http://ec2-65-0-86-237.ap-south-1.compute.amazonaws.com/)
-
 ---
 
 ## Features
