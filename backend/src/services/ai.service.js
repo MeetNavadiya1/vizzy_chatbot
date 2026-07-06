@@ -3,7 +3,7 @@ import { runOrchestratedWorkflow } from "../agents/orchestrator.agent.js";
 import { getConversationHistory } from "./conversation.service.js";
 import { DEFAULT_MODE } from "../types/ai.types.js";
 
-const AI_WORKFLOW_TIMEOUT_MS = 120000;
+const AI_WORKFLOW_TIMEOUT_MS = 180000;
 
 function buildUserContent({ content, mediaUrl }) {
   const parts = [];

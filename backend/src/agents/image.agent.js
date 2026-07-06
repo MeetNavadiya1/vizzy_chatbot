@@ -11,7 +11,7 @@ import { env } from "../config/env.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadsDir = path.join(__dirname, "../../uploads");
-const IMAGE_VARIANT_TIMEOUT_MS = 60000;
+const IMAGE_VARIANT_TIMEOUT_MS = 120000;
 const IMAGE_WORKFLOW_TIMEOUT_MS = 180000;
 
 const IMAGE_VARIANTS = [
