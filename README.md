@@ -14,7 +14,7 @@ Vizzy accepts natural-language user requests and routes them to specialist AI ag
 
 ## Live Demo
 
-[https://vizzy.example.com](https://vizzy.example.com)
+[http://ec2-65-0-86-237.ap-south-1.compute.amazonaws.com/](http://ec2-65-0-86-237.ap-south-1.compute.amazonaws.com/)
 
 ---
 
