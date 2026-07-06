@@ -46,9 +46,18 @@ function validatePayload(payload) {
 }
 
 export async function handleChat(req, res) {
+  console.time("handleChat");
+  console.info("[handleChat] Incoming request", {
+    conversationId: req.body?.conversationId || null,
+    useCase: req.body?.useCase || null,
+    hasMediaUrl: Boolean(req.body?.mediaUrl),
+  });
+
   try {
     const errorMessage = validatePayload(req.body);
     if (errorMessage) {
+      console.warn("[handleChat] Validation failed", { errorMessage });
+      console.timeEnd("handleChat");
       return res.status(400).json({ success: false, message: errorMessage });
     }
 
@@ -58,6 +67,10 @@ export async function handleChat(req, res) {
         ? userPrompt.trim()
         : content.trim();
     const normalizedUseCase = (useCase || "home").toLowerCase();
+    console.info("[handleChat] Starting AI workflow", {
+      conversationId: conversationId || null,
+      useCase: normalizedUseCase,
+    });
     const workflowResult = await runAiWorkflow({
       conversationId,
       userPrompt: promptText,
@@ -100,14 +113,27 @@ export async function handleChat(req, res) {
           mediaUrls: workflowResult.assistantMessage.mediaUrls,
         },
         response: responseData,
-      },
+        },
     });
   } catch (error) {
-    console.error(error);
+    console.error("[handleChat] Failed", {
+      message: error?.message,
+      stack: error?.stack,
+    });
+
+    const isImageWorkflowError =
+      error?.isImageGenerationError === true ||
+      error?.message?.toLowerCase().includes("image generation");
+
     return res.status(500).json({
       success: false,
-      message: error.message || "AI workflow failed.",
+      message: isImageWorkflowError
+        ? "Image generation failed"
+        : error.message || "AI workflow failed.",
+      error: error?.message || "Unknown error",
     });
+  } finally {
+    console.timeEnd("handleChat");
   }
 }
 

@@ -13,5 +13,8 @@ export const orchestrator = Agent.create({
 const runner = new Runner();
 
 export async function runOrchestratedWorkflow(input, context) {
-  return runner.run(orchestrator, input, { context });
+  return runner.run(orchestrator, input, {
+    context,
+    maxTurns: 6,
+  });
 }

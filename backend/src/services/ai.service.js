@@ -3,6 +3,8 @@ import { runOrchestratedWorkflow } from "../agents/orchestrator.agent.js";
 import { getConversationHistory } from "./conversation.service.js";
 import { DEFAULT_MODE } from "../types/ai.types.js";
 
+const AI_WORKFLOW_TIMEOUT_MS = 120000;
+
 function buildUserContent({ content, mediaUrl }) {
   const parts = [];
 
@@ -39,6 +41,20 @@ function buildHistoryInput(history) {
   });
 }
 
+function withTimeout(operation, timeoutMs, timeoutMessage) {
+  let timeoutId;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
+
 export async function runAiWorkflow({
   conversationId,
   userPrompt,
@@ -46,15 +62,30 @@ export async function runAiWorkflow({
   mediaUrl,
   baseUrl,
 }) {
+  console.time("AI Workflow");
+  console.info("[AI Workflow] Starting", {
+    conversationId: conversationId || null,
+    useCase,
+    hasMediaUrl: Boolean(mediaUrl),
+  });
+
   const normalizedUseCase = (useCase || DEFAULT_MODE).toLowerCase();
-  const history = await getConversationHistory(conversationId);
-  const userMessage = {
-    role: "user",
-    content: userPrompt,
-    mediaUrl: mediaUrl || null,
-  };
-  const result = await runOrchestratedWorkflow(
-    [
+  try {
+    console.time("[AI Workflow] Load Conversation History");
+    const history = await getConversationHistory(conversationId);
+    console.timeEnd("[AI Workflow] Load Conversation History");
+    console.info("[AI Workflow] Loaded conversation history", {
+      conversationId: conversationId || null,
+      historyMessages: history.length,
+    });
+
+    const userMessage = {
+      role: "user",
+      content: userPrompt,
+      mediaUrl: mediaUrl || null,
+    };
+
+    const workflowInput = [
       ...buildHistoryInput(history),
       user(
         buildUserContent({
@@ -62,33 +93,57 @@ export async function runAiWorkflow({
           mediaUrl,
         }),
       ),
-    ],
-    {
-      userPrompt,
+    ];
+
+    console.time("[AI Workflow] Orchestrator Run");
+    const result = await withTimeout(
+      runOrchestratedWorkflow(workflowInput, {
+        userPrompt,
+        useCase: normalizedUseCase,
+        mediaUrl: mediaUrl || null,
+        baseUrl,
+        conversationId: conversationId || null,
+      }),
+      AI_WORKFLOW_TIMEOUT_MS,
+      "AI workflow timeout",
+    );
+    console.timeEnd("[AI Workflow] Orchestrator Run");
+
+    const assistantOutput = result.finalOutput;
+
+    if (!assistantOutput) {
+      throw new Error("The agent workflow completed without a final output.");
+    }
+
+    console.info("[AI Workflow] Received final output", {
+      type: assistantOutput.type,
+      hasMediaUrl: Boolean(assistantOutput.mediaUrl),
+      mediaUrlCount: assistantOutput.mediaUrls?.length || 0,
+    });
+
+    const assistantMessage = {
+      role: "assistant",
+      content: assistantOutput.content,
+      mediaUrl: assistantOutput.mediaUrl,
+      mediaUrls: assistantOutput.mediaUrls || [],
+    };
+
+    return {
+      type: assistantOutput.type,
+      conversationId,
+      userMessage,
+      assistantMessage,
+      result,
+    };
+  } catch (error) {
+    console.error("[AI Workflow] Failed", {
+      message: error?.message,
+      stack: error?.stack,
       useCase: normalizedUseCase,
-      mediaUrl: mediaUrl || null,
-      baseUrl,
       conversationId: conversationId || null,
-    },
-  );
-  const assistantOutput = result.finalOutput;
-
-  if (!assistantOutput) {
-    throw new Error("The agent workflow completed without a final output.");
+    });
+    throw error;
+  } finally {
+    console.timeEnd("AI Workflow");
   }
-
-  const assistantMessage = {
-    role: "assistant",
-    content: assistantOutput.content,
-    mediaUrl: assistantOutput.mediaUrl,
-    mediaUrls: assistantOutput.mediaUrls || [],
-  };
-
-  return {
-    type: assistantOutput.type,
-    conversationId,
-    userMessage,
-    assistantMessage,
-    result,
-  };
 }

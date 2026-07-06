@@ -11,6 +11,8 @@ import { env } from "../config/env.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadsDir = path.join(__dirname, "../../uploads");
+const IMAGE_VARIANT_TIMEOUT_MS = 60000;
+const IMAGE_WORKFLOW_TIMEOUT_MS = 180000;
 
 const IMAGE_VARIANTS = [
   {
@@ -53,6 +55,26 @@ After generating the image, give only a short confirmation.`,
 
 async function ensureUploadsDir() {
   await fs.mkdir(uploadsDir, { recursive: true });
+}
+
+function withTimeout(operation, timeoutMs, timeoutMessage) {
+  let timeoutId;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
+
+function markAsImageGenerationError(error, metadata = {}) {
+  error.isImageGenerationError = true;
+  error.imageGenerationMetadata = metadata;
+  return error;
 }
 
 async function writeGeneratedImage(base64Payload, extension = "png") {
@@ -158,16 +180,64 @@ function extractImageFromHostedRun(runResult) {
 }
 
 async function generateVariantImage({ runner, prompt, variant, baseUrl }) {
-  const runResult = await runner.run(hostedImageAgent, prompt, {
-    context: { variantLabel: variant.label },
-  });
-  const generatedImage = extractImageFromHostedRun(runResult);
-  const filename = await writeGeneratedImage(
-    generatedImage.base64,
-    generatedImage.extension,
-  );
+  const timerLabel = `[Image Variant] ${variant.label}`;
 
-  return buildPublicUrl(baseUrl, filename);
+  console.time(timerLabel);
+  console.info("[Image Variant] Starting", {
+    variant: variant.label,
+  });
+
+  try {
+    console.info("[Image Variant] Calling hosted image agent", {
+      variant: variant.label,
+    });
+    const runResult = await withTimeout(
+      runner.run(hostedImageAgent, prompt, {
+        context: { variantLabel: variant.label },
+        maxTurns: 3,
+      }),
+      IMAGE_VARIANT_TIMEOUT_MS,
+      `Image generation timeout for ${variant.label}`,
+    );
+    console.info("[Image Variant] Hosted image agent completed", {
+      variant: variant.label,
+      newItems: runResult?.newItems?.length || 0,
+      rawResponses: runResult?.rawResponses?.length || 0,
+    });
+
+    console.info("[Image Variant] Extracting generated image", {
+      variant: variant.label,
+    });
+    const generatedImage = extractImageFromHostedRun(runResult);
+
+    console.info("[Image Variant] Writing generated image to uploads", {
+      variant: variant.label,
+      extension: generatedImage.extension,
+    });
+    const filename = await writeGeneratedImage(
+      generatedImage.base64,
+      generatedImage.extension,
+    );
+    const publicUrl = buildPublicUrl(baseUrl, filename);
+
+    console.info("[Image Variant] Completed", {
+      variant: variant.label,
+      publicUrl,
+    });
+
+    return publicUrl;
+  } catch (error) {
+    console.error("[Image Variant] Failed", {
+      variant: variant.label,
+      message: error?.message,
+      stack: error?.stack,
+    });
+    throw markAsImageGenerationError(error, {
+      variant: variant.label,
+    });
+  } finally {
+    console.timeEnd(timerLabel);
+  }
 }
 
 const generateImagesTool = tool({
@@ -177,42 +247,76 @@ const generateImagesTool = tool({
   parameters: z.object({}),
   strict: true,
   async execute(_input, runContext) {
+    console.time("Image Workflow");
+    console.info("[Image Workflow] Starting image workflow", {
+      useCase: runContext?.context?.useCase || "home",
+      hasMediaUrl: Boolean(runContext?.context?.mediaUrl),
+    });
+
     if (!env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is required for image generation.");
+      throw markAsImageGenerationError(
+        new Error("OPENAI_API_KEY is required for image generation."),
+      );
     }
 
-    const userPrompt = runContext?.context?.userPrompt || "";
-    const useCase = runContext?.context?.useCase || "home";
-    const mediaUrl = runContext?.context?.mediaUrl || null;
-    const runner = new Runner();
+    try {
+      const userPrompt = runContext?.context?.userPrompt || "";
+      const useCase = runContext?.context?.useCase || "home";
+      const mediaUrl = runContext?.context?.mediaUrl || null;
+      const runner = new Runner();
 
-    const mediaUrls = [];
+      const mediaUrls = await withTimeout(
+        (async () => {
+          const urls = [];
 
-    for (const variant of IMAGE_VARIANTS) {
-      const requestPrompt = buildImageGenerationPrompt({
-        userPrompt,
-        useCase,
-        mediaUrl,
-        variantDirection: variant.direction,
+          for (const variant of IMAGE_VARIANTS) {
+            console.info("[Image Workflow] Preparing variant prompt", {
+              variant: variant.label,
+            });
+            const requestPrompt = buildImageGenerationPrompt({
+              userPrompt,
+              useCase,
+              mediaUrl,
+              variantDirection: variant.direction,
+            });
+
+            const mediaUrlForVariant = await generateVariantImage({
+              runner,
+              prompt: requestPrompt,
+              variant,
+              baseUrl: runContext?.context?.baseUrl,
+            });
+
+            urls.push(mediaUrlForVariant);
+          }
+
+          return urls;
+        })(),
+        IMAGE_WORKFLOW_TIMEOUT_MS,
+        "Image generation workflow timeout",
+      );
+
+      console.info("[Image Workflow] Image workflow completed", {
+        imageCount: mediaUrls.length,
       });
-      const mediaUrlForVariant = await generateVariantImage({
-        runner,
-        prompt: requestPrompt,
-        variant,
-        baseUrl: runContext?.context?.baseUrl,
-      });
 
-      mediaUrls.push(mediaUrlForVariant);
+      return JSON.stringify(
+        ASSISTANT_RESPONSE_SCHEMA.parse({
+          type: "image",
+          content: "",
+          mediaUrl: mediaUrls[0] || null,
+          mediaUrls,
+        }),
+      );
+    } catch (error) {
+      console.error("[Image Workflow] Failed", {
+        message: error?.message,
+        stack: error?.stack,
+      });
+      throw markAsImageGenerationError(error);
+    } finally {
+      console.timeEnd("Image Workflow");
     }
-
-    return JSON.stringify(
-      ASSISTANT_RESPONSE_SCHEMA.parse({
-        type: "image",
-        content: "",
-        mediaUrl: mediaUrls[0] || null,
-        mediaUrls,
-      }),
-    );
   },
 });
 
