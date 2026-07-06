@@ -47,8 +47,6 @@ Vizzy accepts natural-language user requests and routes them to specialist AI ag
 | File Uploads | Multer |
 | API Docs | Swagger UI Express, swagger-jsdoc |
 | Tooling | npm, ESLint, Prettier, Nodemon |
-| Deployment Target | AWS EC2, Nginx, PM2 |
-| Automation | GitHub Actions workflow friendly setup |
 
 ---
 
@@ -156,44 +154,6 @@ Vizzy/
 |   `-- vite.config.js
 `-- README.md
 ```
-
----
-
-## CI/CD Pipeline
-
-Vizzy is structured to work well with a GitHub Actions based deployment pipeline, even though a workflow file is not currently checked into this repository.
-
-A typical pipeline for this project would:
-
-- check out the repository
-- install frontend and backend dependencies
-- run linting and tests
-- build the frontend
-- deploy the updated application to an AWS EC2 instance
-- restart the backend process with PM2
-
-```mermaid
-flowchart LR
-    A[Git Push] --> B[GitHub Actions]
-    B --> C[Install Dependencies]
-    C --> D[Test and Lint]
-    D --> E[Build Frontend]
-    E --> F[Deploy to EC2]
-    F --> G[Restart PM2 Process]
-```
-
----
-
-## Deployment
-
-Vizzy is well suited for deployment on a small VPS-style production stack using AWS EC2, Nginx, and PM2.
-
-| Component | Purpose |
-|---|---|
-| AWS EC2 | Hosts the frontend build output and backend runtime |
-| Nginx | Acts as the reverse proxy and handles incoming HTTP traffic |
-| PM2 | Keeps the Node.js backend process alive and manageable |
-| GitHub Actions | Automates build, test, and deployment steps |
 
 ---
 
