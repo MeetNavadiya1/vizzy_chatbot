@@ -1,8 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Agent, Runner, tool } from "@openai/agents";
-import { imageGenerationTool } from "@openai/agents-openai";
+import { Agent, tool } from "@openai/agents";
 import { z } from "zod";
 import { imagePrompt } from "../prompts/image.prompt.js";
 import { ASSISTANT_RESPONSE_SCHEMA } from "../types/ai.types.js";
@@ -12,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadsDir = path.join(__dirname, "../../uploads");
 const IMAGE_VARIANT_TIMEOUT_MS = 120000;
-const IMAGE_WORKFLOW_TIMEOUT_MS = 180000;
+const IMAGE_WORKFLOW_TIMEOUT_MS = 420000;
 
 const IMAGE_VARIANTS = [
   {
@@ -31,27 +30,6 @@ const IMAGE_VARIANTS = [
       "Create a textural, atmospheric interpretation with richer surfaces, experimental details, and a more expressive artistic feel.",
   },
 ];
-
-const hostedImageAgent = new Agent({
-  name: "Hosted Image Variant Agent",
-  instructions: (runContext) => `You generate exactly one final artwork image.
-
-Use the hosted image generation tool exactly once.
-
-The current variation target is ${runContext?.context?.variantLabel || "one variant"}.
-
-Respect the supplied prompt fully and do not explain your work.
-
-After generating the image, give only a short confirmation.`,
-  tools: [
-    imageGenerationTool({
-      model: env.OPENAI_IMAGE_MODEL,
-      size: "1024x1024",
-      quality: "high",
-      outputFormat: "png",
-    }),
-  ],
-});
 
 async function ensureUploadsDir() {
   await fs.mkdir(uploadsDir, { recursive: true });
@@ -131,55 +109,7 @@ function extractBase64Image(source) {
   };
 }
 
-function extractImageFromHostedRun(runResult) {
-  const hostedItems = runResult?.newItems || [];
-
-  for (let index = hostedItems.length - 1; index >= 0; index -= 1) {
-    const rawItem = hostedItems[index]?.rawItem;
-
-    if (rawItem?.type !== "hosted_tool_call") {
-      continue;
-    }
-
-    if (rawItem?.name !== "image_generation_call") {
-      continue;
-    }
-
-    const candidates = [rawItem.output, rawItem.providerData?.result];
-
-    for (const candidate of candidates) {
-      const extracted = extractBase64Image(candidate);
-
-      if (extracted) {
-        return extracted;
-      }
-    }
-  }
-
-  const rawResponses = runResult?.rawResponses || [];
-
-  for (let responseIndex = rawResponses.length - 1; responseIndex >= 0; responseIndex -= 1) {
-    const responseOutput = rawResponses[responseIndex]?.response?.output || [];
-
-    for (let itemIndex = responseOutput.length - 1; itemIndex >= 0; itemIndex -= 1) {
-      const item = responseOutput[itemIndex];
-
-      if (item?.type !== "image_generation_call") {
-        continue;
-      }
-
-      const extracted = extractBase64Image(item?.result);
-
-      if (extracted) {
-        return extracted;
-      }
-    }
-  }
-
-  throw new Error("Hosted image generation did not return image data.");
-}
-
-async function generateVariantImage({ runner, prompt, variant, baseUrl }) {
+async function generateVariantImage({ prompt, variant, baseUrl }) {
   const timerLabel = `[Image Variant] ${variant.label}`;
 
   console.time(timerLabel);
@@ -188,36 +118,60 @@ async function generateVariantImage({ runner, prompt, variant, baseUrl }) {
   });
 
   try {
-    console.info("[Image Variant] Calling hosted image agent", {
+    console.info("[Image Variant] Calling OpenAI Images API", {
       variant: variant.label,
+      model: env.OPENAI_IMAGE_MODEL,
     });
-    const runResult = await withTimeout(
-      runner.run(hostedImageAgent, prompt, {
-        context: { variantLabel: variant.label },
-        maxTurns: 3,
+
+    const response = await withTimeout(
+      fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: env.OPENAI_IMAGE_MODEL,
+          prompt,
+          size: "1024x1024",
+          quality: "high",
+          output_format: "png",
+        }),
       }),
       IMAGE_VARIANT_TIMEOUT_MS,
       `Image generation timeout for ${variant.label}`,
     );
-    console.info("[Image Variant] Hosted image agent completed", {
-      variant: variant.label,
-      newItems: runResult?.newItems?.length || 0,
-      rawResponses: runResult?.rawResponses?.length || 0,
-    });
 
-    console.info("[Image Variant] Extracting generated image", {
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `OpenAI Images API failed for ${variant.label}: ${response.status} ${errorText}`,
+      );
+    }
+
+    console.info("[Image Variant] Waiting for image response body", {
       variant: variant.label,
     });
-    const generatedImage = extractImageFromHostedRun(runResult);
+    const payload = await response.json();
+    const imageBase64 =
+      payload?.data?.find((item) => typeof item?.b64_json === "string")?.b64_json ||
+      null;
+
+    if (!imageBase64) {
+      throw new Error(
+        `OpenAI Images API did not return image data for ${variant.label}.`,
+      );
+    }
+
+    console.info("[Image Variant] Image received", {
+      variant: variant.label,
+    });
 
     console.info("[Image Variant] Writing generated image to uploads", {
       variant: variant.label,
-      extension: generatedImage.extension,
+      extension: "png",
     });
-    const filename = await writeGeneratedImage(
-      generatedImage.base64,
-      generatedImage.extension,
-    );
+    const filename = await writeGeneratedImage(imageBase64, "png");
     const publicUrl = buildPublicUrl(baseUrl, filename);
 
     console.info("[Image Variant] Completed", {
@@ -263,7 +217,6 @@ const generateImagesTool = tool({
       const userPrompt = runContext?.context?.userPrompt || "";
       const useCase = runContext?.context?.useCase || "home";
       const mediaUrl = runContext?.context?.mediaUrl || null;
-      const runner = new Runner();
 
       const mediaUrls = await withTimeout(
         (async () => {
@@ -281,7 +234,6 @@ const generateImagesTool = tool({
             });
 
             const mediaUrlForVariant = await generateVariantImage({
-              runner,
               prompt: requestPrompt,
               variant,
               baseUrl: runContext?.context?.baseUrl,

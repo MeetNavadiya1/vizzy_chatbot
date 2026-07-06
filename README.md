@@ -40,6 +40,8 @@ Vizzy accepts natural-language user requests and routes them to specialist AI ag
 | Frontend | React 19, Vite, Tailwind CSS 4, Lucide React |
 | Backend | Node.js, Express 5 |
 | AI | OpenAI API, OpenAI Agents SDK |
+| Text Model | `gpt-4o-mini` |
+| Image Model | `gpt-image-1` via `OPENAI_IMAGE_MODEL` |
 | Validation | Zod |
 | Runtime Config | dotenv |
 | File Uploads | Multer |
@@ -61,6 +63,13 @@ Vizzy uses the OpenAI Agents SDK to keep routing logic explicit, modular, and ea
 
 > In practice, this gives Vizzy a cleaner separation of concerns than manually stuffing every behavior into one monolithic prompt.
 
+### Model Configuration
+
+| Capability | Current Model | Where It Is Used |
+|---|---|---|
+| Text generation | `gpt-4o-mini` | `backend/src/agents/text.agent.js` |
+| Image generation | `gpt-image-1` by default, configurable through `OPENAI_IMAGE_MODEL` | `backend/src/agents/image.agent.js` |
+
 ---
 
 ## Architecture
@@ -71,16 +80,17 @@ flowchart TD
     B --> C[Express API]
     C --> D[AI Service]
     D --> E[Conversation Service]
-    D --> F[Runner]
+    D --> F[OpenAI Runner]
     F --> G[Orchestrator Agent]
     G -->|handoff| H[Image Agent]
     G -->|handoff| I[Text Agent]
-    H --> J[Image Generation Tool]
-    I --> K[Structured Text Output]
-    J --> L[OpenAI]
-    K --> L
-    L --> M[Assistant Response]
-    M --> C
+    H --> J[Direct OpenAI Images API]
+    I --> K[gpt-4o-mini Response]
+    J --> L[3 Sequential Image Variants]
+    L --> M[Local Upload Persistence]
+    K --> N[Structured Assistant Output]
+    M --> N
+    N --> C
     C --> B
 ```
 
@@ -90,8 +100,9 @@ flowchart TD
 2. The backend builds conversational context from prior messages.
 3. The OpenAI `Runner` executes the Orchestrator Agent.
 4. The orchestrator hands off to either the Image Agent or Text Agent.
-5. The specialist agent returns a schema-validated structured response.
-6. The API returns content or generated image URLs to the frontend.
+5. The Text Agent generates structured text with `gpt-4o-mini`.
+6. The Image Agent calls the OpenAI Images API three times in sequence with variant prompts, stores the generated files locally, and returns public image URLs.
+7. The API returns content or generated image URLs to the frontend.
 
 ---
 
@@ -294,8 +305,8 @@ OPENAI_IMAGE_MODEL=gpt-image-1
 | Area | Summary |
 |---|---|
 | Routing | The Orchestrator Agent decides whether a request is image-oriented or text-oriented |
-| Image Generation | The Image Agent uses the OpenAI image workflow to return multiple artwork variants |
-| Text Generation | The Text Agent returns structured text responses through the shared schema |
+| Image Generation | The Image Agent uses the direct OpenAI Images API in 3 sequential iterations to return multiple artwork variants |
+| Text Generation | The Text Agent uses `gpt-4o-mini` and returns structured text responses through the shared schema |
 | Response Contract | Responses are validated with Zod before being returned to the client |
 | Persistence | Conversation history is managed through dedicated service and repository layers |
 
