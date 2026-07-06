@@ -301,24 +301,6 @@ OPENAI_IMAGE_MODEL=gpt-image-1
 
 ---
 
-## Future Improvements
-
-- Add more specialist agents for branding, summarization, or storytelling
-- Introduce persistent user authentication
-- Add streaming responses for lower perceived latency
-- Support voice input and audio output workflows
-- Expand analytics and observability dashboards
-- Add richer conversation memory and personalization
-- Introduce queueing and background job support for heavy image generation
-
----
-
-## License
-
-This project is licensed under the **MIT License**.
-
----
-
 ## Author
 
 **Meet Navadiya**
