@@ -23,7 +23,7 @@ jobs:
           script: |
             set -e
 
-            cd /home/ubuntu/<repo>
+            cd /home/ubuntu/vizzy_chatbot
 
             git fetch origin
             git reset --hard origin/main
@@ -32,6 +32,7 @@ jobs:
 
             cat > backend/.env << EOF
             PORT=${{ secrets.PORT }}
+            CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
             OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
             RATE_LIMIT_WINDOW_MS=${{ secrets.RATE_LIMIT_WINDOW_MS }}
             RATE_LIMIT_MAX=${{ secrets.RATE_LIMIT_MAX }}
