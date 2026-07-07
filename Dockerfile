@@ -3,20 +3,17 @@
 # -----------------------
 FROM node:22-alpine
 
-# Root directory
-WORKDIR /app
-
 # -----------------------
 # Backend
 # -----------------------
 
-COPY backend/package*.json ./backend/
-
 WORKDIR /app/backend
+
+COPY backend/package*.json ./
 
 RUN npm install
 
-COPY backend .
+COPY backend ./
 
 # -----------------------
 # Frontend
@@ -24,16 +21,16 @@ COPY backend .
 
 WORKDIR /app/frontend
 
-COPY frontend/package*.json .
+COPY frontend/package*.json ./
 
 RUN npm install
 
-COPY frontend .
+COPY frontend ./
 
 RUN npm run build
 
 # -----------------------
-# Back to backend
+# Start Backend
 # -----------------------
 
 WORKDIR /app/backend
