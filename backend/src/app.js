@@ -34,10 +34,17 @@ const limiter = rateLimit({
 
 app.use(limiter);
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
 app.use("/api", aiRoutes);
 
 app.get("/health", (_req, res) => {
   res.status(200).json({ success: true, message: "Backend is healthy" });
+});
+
+app.use(express.static(path.join(__dirname, "../../frontend/dist")));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../../frontend/dist/index.html"));
 });
 
 export default app;

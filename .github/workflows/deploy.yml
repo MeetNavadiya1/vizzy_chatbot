@@ -1,0 +1,56 @@
+name: Deploy Vizzy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+
+          script: |
+            set -e
+
+            cd /home/ubuntu/<repo>
+
+            git fetch origin
+            git reset --hard origin/main
+
+            echo "Creating backend/.env..."
+
+            cat > backend/.env << EOF
+            PORT=${{ secrets.PORT }}
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            RATE_LIMIT_WINDOW_MS=${{ secrets.RATE_LIMIT_WINDOW_MS }}
+            RATE_LIMIT_MAX=${{ secrets.RATE_LIMIT_MAX }}
+            NODE_ENV=${{ secrets.NODE_ENV }}
+            EOF
+
+            docker stop vizzy || true
+            docker rm vizzy || true
+            docker rmi vizzy || true
+
+            docker build -t vizzy .
+
+            docker run -d \
+              --name vizzy \
+              --restart unless-stopped \
+              -p 80:5000 \
+              --env-file backend/.env \
+              vizzy
+
+            docker image prune -f
+
+            echo "Deployment completed successfully."
