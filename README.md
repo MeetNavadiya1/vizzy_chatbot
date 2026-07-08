@@ -14,6 +14,12 @@ Vizzy accepts natural-language user requests and routes them to specialist AI ag
 
 ---
 
+## LIVE Demo Link
+
+[http://ec2-65-2-186-103.ap-south-1.compute.amazonaws.com/](http://ec2-65-2-186-103.ap-south-1.compute.amazonaws.com/)
+
+---
+
 ## Features
 
 - [x] Conversational AI interface for text and image requests
@@ -97,6 +103,16 @@ flowchart TD
 5. The Text Agent generates structured text with `gpt-4o-mini`.
 6. The Image Agent calls the OpenAI Images API three times in sequence with variant prompts, stores the generated files locally, and returns public image URLs.
 7. The API returns content or generated image URLs to the frontend.
+
+---
+
+## Deployment
+
+Vizzy is deployed using a GitHub Actions CI/CD pipeline and runs inside Docker on a single AWS EC2 instance.
+
+- **CI/CD Pipeline:** GitHub Actions automates the deployment workflow so code changes can move from repository updates to the live server in a consistent way.
+- **Containerized Runtime:** The application is packaged as one Docker container that builds the React + Vite frontend and runs the Express backend.
+- **AWS EC2 Hosting:** The Docker container runs on an AWS EC2 instance, where Express serves both the production frontend build and the `/api` routes from the same application.
 
 ---
 
