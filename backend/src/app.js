@@ -14,9 +14,20 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+const isProduction = env.NODE_ENV === "production";
+
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginResourcePolicy: {
+      policy: "cross-origin",
+    },
+    contentSecurityPolicy: isProduction
+      ? undefined
+      : {
+          directives: {
+            upgradeInsecureRequests: null,
+          },
+        },
   }),
 );
 app.use(compression());
