@@ -3,7 +3,6 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import compression from "compression";
-import helmet from "helmet";
 import hpp from "hpp";
 import rateLimit from "express-rate-limit";
 import aiRoutes from "./routes/ai.routes.js";
@@ -14,22 +13,6 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-const isProduction = env.NODE_ENV === "production";
-
-app.use(
-  helmet({
-    crossOriginResourcePolicy: {
-      policy: "cross-origin",
-    },
-    contentSecurityPolicy: isProduction
-      ? undefined
-      : {
-          directives: {
-            upgradeInsecureRequests: null,
-          },
-        },
-  }),
-);
 app.use(compression());
 app.use(hpp());
 app.use(cors({ origin: env.CORS_ORIGIN }));
