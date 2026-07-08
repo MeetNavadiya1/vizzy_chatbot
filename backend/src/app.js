@@ -19,6 +19,7 @@ app.use(cors({ origin: env.CORS_ORIGIN }));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+// rate limiter
 const limiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
   max: env.RATE_LIMIT_MAX,
